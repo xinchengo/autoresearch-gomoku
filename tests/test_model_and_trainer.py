@@ -4,18 +4,12 @@ import numpy as np
 import torch
 
 from src.models import ActorCriticNet
-from src.trainer import (
-    TrainConfig,
-    TrainState,
-    build_parser,
-    collect_self_play,
-    load_torch_checkpoint,
-    parse_duration,
-    ppo_update,
-    resolve_device,
-    save_checkpoint,
-    train,
-)
+from src.algorithms.ppo import collect_self_play, ppo_update
+from src.training.checkpointing import load_torch_checkpoint, save_checkpoint
+from src.training.cli import build_parser
+from src.training.config import TrainConfig, TrainState, parse_duration, resolve_device
+from src.training.evaluation import evaluate
+from src.training.runner import train
 
 
 def test_parse_duration_units() -> None:
@@ -23,6 +17,18 @@ def test_parse_duration_units() -> None:
     assert parse_duration("2m") == 120
     assert parse_duration("1.5h") == 5400
     assert parse_duration("1d") == 86400
+
+
+def test_parser_accepts_eval_opponents() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["--eval-opponents", "random,tactical"])
+    assert args.eval_opponents == ("random", "tactical")
+
+
+def test_parser_accepts_eval_checkpoints() -> None:
+    parser = build_parser()
+    args = parser.parse_args(["--eval-checkpoints", "base=/tmp/base.pt,strong=/tmp/strong.pt"])
+    assert args.eval_checkpoints == ("base=/tmp/base.pt", "strong=/tmp/strong.pt")
 
 
 def test_model_masks_illegal_actions() -> None:
@@ -72,6 +78,34 @@ def test_checkpoint_round_trip(tmp_path) -> None:
     assert (tmp_path / "checkpoints" / "latest.pt").exists()
 
 
+def test_evaluate_against_checkpoint_model(tmp_path) -> None:
+    cfg = TrainConfig(
+        board_size=3,
+        n_in_row=3,
+        channels=8,
+        blocks=1,
+        eval_games=2,
+        eval_opponents=(),
+    )
+    state = TrainState()
+    model = ActorCriticNet(board_size=3, channels=8, blocks=1)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=1e-3)
+    path = save_checkpoint(model, optimizer, cfg, state, tmp_path, "opponent.pt")
+
+    eval_cfg = TrainConfig(
+        board_size=3,
+        n_in_row=3,
+        channels=8,
+        blocks=1,
+        eval_games=2,
+        eval_opponents=(),
+        eval_checkpoints=(f"base={path}",),
+    )
+    metrics = evaluate(model, eval_cfg, torch.device("cpu"))
+    assert "ckpt_base_score" in metrics
+    assert "ckpt_base_win_rate" in metrics
+
+
 def test_trainer_zero_duration_writes_final_checkpoint(tmp_path) -> None:
     parser = build_parser()
     args = parser.parse_args(
@@ -100,4 +134,3 @@ def test_trainer_zero_duration_writes_final_checkpoint(tmp_path) -> None:
     train(args)
     assert (tmp_path / "unit" / "checkpoints" / "final.pt").exists()
     assert (tmp_path / "unit" / "metrics.jsonl").exists()
-

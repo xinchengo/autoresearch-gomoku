@@ -1,129 +1,120 @@
 # autoresearch-gomoku
 
-This is an autonomous research program for improving a Gomoku agent with PPO self-play.
+Autonomous research program for improving a Gomoku agent with PPO self-play.
 
-The project is inspired by `karpathy/autoresearch`, but the loop is different because reinforcement learning runs can last for hours or days and can resume from checkpoints.
+This follows the spirit of `karpathy/autoresearch`: the human writes the research protocol here, the agent edits the allowed training code, runs experiments, logs results, and keeps only changes that help. Unlike the upstream 5-minute supervised loop, Gomoku RL runs may last hours or days and should resume from checkpoints.
 
-## Non-Negotiable Rule
+## Hard Rule
 
-The deployed Gomoku agent must be a pure neural-network policy at inference time.
+Inference must be pure neural network policy inference:
 
-Allowed at inference:
-- one model forward pass
-- legal-action masking
-- argmax or sampling from the masked policy
+- allowed: one model forward pass, legal-action masking, argmax or sampling
+- forbidden: MCTS, minimax, alpha-beta, rollouts, tactical rule search, opponent simulation, or any other search-time helper
 
-Not allowed at inference:
-- MCTS
-- minimax
-- alpha-beta search
-- rollouts
-- tactical rule search layered on top of the network
-- opponent simulation
-
-Training may use PPO self-play and evaluation games, but do not add search-time overhead to the final policy.
+Oracle policies in `src/oracle/` are evaluation opponents only. Do not copy their rules into the trained policy's inference path.
 
 ## Setup
 
-To set up a new research run:
+For a new run:
 
-1. Agree on a run tag, preferably date based, such as `apr29`.
-2. Create a branch such as `autoresearch/<tag>`.
-3. Read the in-scope files:
-   - `README.md` for repository context.
-   - `src/gobang/` for the Gymnasium-compatible Gomoku environment.
-   - `src/oracle/` for immutable course-agent adapter boundaries.
-   - `src/trainer.py` for PPO training.
-   - `src/models/` for neural policy-value architectures.
-4. Run a tiny smoke test before long experiments:
+1. Pick a run tag such as `apr29` and create `autoresearch/<tag>` from the current main branch.
+2. Read `README.md`, `src/gobang/`, `src/oracle/`, `src/training/`, `src/configs/`, `src/algorithms/`, and `src/models/`.
+3. Run tests and a smoke run before any long experiment:
 
 ```bash
-uv run python -m src.trainer --tag smoke --board-size 5 --n-in-row 4 --duration 30s --checkpoint-interval 30s --eval-interval 30s --eval-games 2 --device cpu
+uv run pytest
+uv run python -m src.trainer --config smoke
 ```
 
-5. Start the first baseline run before modifying research code.
+4. Establish the current baseline before changing research code.
 
-## Mutable And Immutable Files
+## Boundaries
 
-What you CAN modify:
-- `src/trainer.py`
+You may modify:
+
+- `src/training/`
+- `src/configs/`
+- `src/algorithms/`
 - `src/models/`
-- tests that cover changed behavior
-- this `program.md` if you are improving the research procedure
+- tests for changed behavior
+- `program.md` when improving the research protocol
 
-What you CANNOT modify during autonomous research:
+Do not modify during autonomous research unless explicitly instructed:
+
 - `src/gobang/`
 - `src/oracle/`
-- evaluation semantics in the trainer, except to add adapters for explicitly provided course agents
+- the evaluation meaning of score/win/draw/loss
 - the no-search inference rule
 
-The environment and oracle package are the benchmark boundary. Treat them as fixed unless the human explicitly asks for infrastructure changes.
+## Experiments
 
-## Experimentation
-
-The goal is to maximize evaluation score against the configured baseline opponents, while preserving simple pure-network inference.
-
-Runs are checkpointed and may last for days. You may choose the run length based on the experiment:
+Runs are checkpointed. Choose duration based on the idea:
 
 ```bash
 uv run python -m src.trainer --tag <tag> --duration 6h --checkpoint-interval 30m --eval-interval 30m
 ```
 
-Resume from a previous checkpoint when continuing a promising line:
+Resume promising runs:
 
 ```bash
 uv run python -m src.trainer --tag <tag> --resume runs/<tag>/checkpoints/latest.pt --duration 6h
 ```
 
-Each run writes:
-- `runs/<tag>/checkpoints/latest.pt`
-- milestone checkpoints in `runs/<tag>/checkpoints/`
-- `runs/<tag>/metrics.jsonl`
-- `runs/<tag>/results.tsv`
+Evaluate against built-in oracle opponents when no course baseline is available:
 
-Do not commit `runs/`, logs, or `results.tsv`.
+```bash
+uv run python -m src.trainer --tag <tag> --eval-opponents random,tactical
+```
 
-## Research Loop
+Evaluate against previously promoted neural checkpoints:
 
-LOOP until interrupted:
+```bash
+uv run python -m src.trainer --tag <tag> --eval-checkpoints base1=runs/baseline/checkpoints/best.pt,strong-cnn=runs/strong-cnn/checkpoints/best.pt
+```
 
-1. Inspect current git state and latest metrics.
-2. Decide whether to resume a promising checkpoint or start a fresh run.
-3. Make one coherent research change.
-4. Run a short smoke test if the change touches execution logic.
-5. Commit the change before the long run.
-6. Launch training with stdout/stderr redirected to a log file.
-7. Periodically inspect `metrics.jsonl`, `results.tsv`, and checkpoint health.
-8. Keep changes that improve score or materially simplify the system without hurting score.
-9. Revert or discard changes that crash, violate pure-network inference, or make results worse without a clear follow-up.
+Each run writes `runs/<tag>/checkpoints/`, `metrics.jsonl`, and `results.tsv`. Do not commit `runs/`, logs, or result TSVs.
 
-If a long run is interrupted, prefer resuming from `latest.pt` unless the experiment was clearly bad.
+## Metric
 
-## Metrics
-
-The default score is:
+The primary score is averaged across configured opponents:
 
 ```text
 score = win_rate + 0.5 * draw_rate
 ```
 
-The baseline evaluator alternates the neural policy as first and second player against a random legal opponent. If course agents are configured through `src/oracle/course_adapter.py`, they may be added as additional evaluation opponents without changing the no-search rule for the trained policy.
+Higher is better, but no fixed opponent is sufficient. Inspect per-opponent metrics in `metrics.jsonl` and `results.tsv` so a change does not merely exploit a weak oracle or one historical model while regressing against stronger checkpoints.
 
-## Simplicity Criterion
+## Baseline Ladder
 
-All else equal, choose simpler changes.
+Maintain a small ladder of representative neural baselines. Gomoku strength can be highly transitive across many levels, so historical self-play comparisons matter more than any single fixed oracle score.
 
-Good research changes include:
-- better PPO targets or advantage normalization
-- stronger pure neural architectures
-- improved self-play sampling
-- curriculum over board sizes
-- better checkpoint and resume reliability
-- evaluation against stronger provided course agents
+Promote a checkpoint to the ladder when it is:
 
-Bad research changes include:
-- hidden search at inference
-- hard-coded tactics in action selection
-- brittle reward hacks that only exploit random evaluation
-- unbounded complexity for tiny metric gains
+- clearly stronger than the current ladder head or fills a useful intermediate strength level
+- structurally simple enough to remain a reference point
+- stable across both first-player and second-player games
+- not merely overfit to `random` or `tactical`
 
+When promoting, keep a named checkpoint path such as `runs/<tag>/checkpoints/best.pt` and include it in future `--eval-checkpoints` runs. Do not add every checkpoint; keep the ladder compact and representative. Prefer 3-8 baselines covering weak, medium, strong, and current-best agents.
+
+`results.tsv` includes aggregate score plus `details_json`. The JSON metrics are the authoritative record for oracle scores and neural-baseline scores such as `ckpt_base1_score` or `ckpt_strong_cnn_win_rate`.
+
+## Logging And Git Loop
+
+LOOP until interrupted:
+
+1. Inspect git state, latest `metrics.jsonl`, latest `results.tsv`, and available checkpoints.
+2. Choose one coherent research change.
+3. Commit the change before the long run.
+4. Run training with output redirected to a log file.
+5. If the run crashes, inspect the last log lines; fix simple bugs, otherwise mark the idea as crash/discard.
+6. Compare aggregate score, oracle metrics, checkpoint-baseline metrics, stability, and complexity.
+7. Keep the commit if it improves the baseline ladder, beats the current head, or simplifies without hurting strength.
+8. Promote representative improved checkpoints to the ladder and include them in future evaluations.
+9. Revert/discard the commit if it is worse, unstable, too complex for the gain, or violates pure-network inference.
+
+Do not pause after the loop starts. Continue experimenting until the human interrupts. If a long run is interrupted, resume from `latest.pt` unless the idea is clearly bad.
+
+## Research Taste
+
+Prefer simple changes with measurable effect: PPO targets, advantage handling, curricula, network architecture, self-play sampling, checkpoint reliability, or stronger evaluation. Avoid brittle reward hacks, hidden search, hard-coded tactics, and large complexity for tiny gains.

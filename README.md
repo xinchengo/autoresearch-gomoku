@@ -9,8 +9,13 @@ However, with the advent of `karparthy/autoresearch`, I have decided to implemen
 - `src/`: Contains the source code for the RL framework and the gomoku game.
     - `gobang/`: The Gymnasium-compatible environment for the gomoku game. The N-in-a-row and the board size are configurable.
     - `oracle/`: The baselines, or evaluation methods provided by the repo creator. Should not be modified by the research agent.
+        - `random_policy.py`: Uniform random legal-move opponent.
+        - `tactical_policy.py`: Rule baseline that blocks/extends Gomoku threats, then samples center-biased shape growth.
     - `trainer.py`
+    - `training/`: Trainer CLI, run loop, checkpointing, evaluation, and config schema.
     - `models/`: Model architectures for the gobang agent.
+    - `configs/`: Python config presets for training runs.
+    - `algorithms/`: PPO rollout and update implementation.
     - ...
 
 ## Quick Start
@@ -33,10 +38,28 @@ Run a CPU smoke training job:
 uv run python -m src.trainer --tag smoke --board-size 5 --n-in-row 4 --duration 30s --checkpoint-interval 30s --eval-interval 30s --eval-games 2 --device cpu
 ```
 
+Or use the Python smoke preset:
+
+```bash
+uv run python -m src.trainer --config smoke
+```
+
 Run a longer checkpointed experiment:
 
 ```bash
 uv run python -m src.trainer --tag baseline --duration 6h --checkpoint-interval 30m --eval-interval 30m
+```
+
+Evaluate against built-in oracle opponents:
+
+```bash
+uv run python -m src.trainer --tag baseline --eval-opponents random,tactical
+```
+
+Evaluate against previous neural checkpoints:
+
+```bash
+uv run python -m src.trainer --tag candidate --eval-checkpoints base=runs/baseline/checkpoints/best.pt
 ```
 
 Resume from the latest checkpoint:
