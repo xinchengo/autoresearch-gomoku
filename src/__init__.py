@@ -1,0 +1,2 @@
+"""Autoresearch Gomoku package."""
+
