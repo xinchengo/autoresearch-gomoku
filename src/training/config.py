@@ -16,7 +16,7 @@ import torch
 class TrainConfig:
     tag: str = "baseline"
     run_dir: str = "runs"
-    board_size: int = 15
+    board_size: int = 12
     n_in_row: int = 5
     seed: int = 1337
     device: str = "auto"

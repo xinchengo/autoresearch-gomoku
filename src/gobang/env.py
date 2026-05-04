@@ -74,7 +74,7 @@ def check_winner(board: np.ndarray, n_in_row: int, last_move: int | None = None)
 
 @dataclass(frozen=True)
 class GomokuConfig:
-    board_size: int = 15
+    board_size: int = 12
     n_in_row: int = 5
     illegal_move_ends_game: bool = True
 
@@ -90,7 +90,7 @@ class GomokuEnv(gym.Env):
 
     def __init__(
         self,
-        board_size: int = 15,
+        board_size: int = 12,
         n_in_row: int = 5,
         illegal_move_ends_game: bool = True,
     ) -> None:

@@ -4,7 +4,7 @@ from src.training.config import TrainConfig
 def get_config() -> TrainConfig:
     return TrainConfig(
         tag="baseline",
-        board_size=15,
+        board_size=12,
         n_in_row=5,
         duration_seconds=3600.0,
         checkpoint_interval_seconds=1800.0,

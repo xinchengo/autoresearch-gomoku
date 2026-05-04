@@ -26,7 +26,7 @@ class ActorCriticNet(nn.Module):
 
     def __init__(
         self,
-        board_size: int = 15,
+        board_size: int = 12,
         in_channels: int = 4,
         channels: int = 64,
         blocks: int = 4,
