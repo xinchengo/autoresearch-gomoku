@@ -29,7 +29,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--value-coef", type=float)
     parser.add_argument("--max-grad-norm", type=float)
     parser.add_argument("--learning-rate", type=float)
-    parser.add_argument("--lr-min-factor", type=float)
     parser.add_argument("--channels", type=int)
     parser.add_argument("--blocks", type=int)
     parser.add_argument("--eval-games", type=int)

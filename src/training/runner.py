@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 import time
 from dataclasses import asdict
 from pathlib import Path
@@ -89,7 +88,6 @@ def _run_training_loop(
             state.env_steps += int(batch["steps"])
             state.games += int(batch["games"])
             state.updates += 1
-            _apply_cosine_lr(optimizer, cfg, start_time, time.time())
 
             now = time.time()
             remaining_progress = max(0.0, cfg.duration_seconds - progress.n)
@@ -187,18 +185,6 @@ def _maybe_checkpoint(
         return next_checkpoint
     save_checkpoint(model, optimizer, cfg, state, run_path, f"step_{state.env_steps}.pt")
     return now + cfg.checkpoint_interval_seconds
-
-
-def _apply_cosine_lr(
-    optimizer: torch.optim.Optimizer,
-    cfg: TrainConfig,
-    start_time: float,
-    now: float,
-) -> None:
-    progress = min(1.0, (now - start_time) / cfg.duration_seconds)
-    lr_mult = cfg.lr_min_factor + 0.5 * (1.0 - cfg.lr_min_factor) * (1.0 + math.cos(math.pi * progress))
-    for param_group in optimizer.param_groups:
-        param_group["lr"] = cfg.learning_rate * lr_mult
 
 
 def _print_summary(metrics: dict[str, float], state: TrainState, checkpoint: Path) -> None:

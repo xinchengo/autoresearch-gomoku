@@ -34,7 +34,6 @@ class TrainConfig:
     value_coef: float = 0.5
     max_grad_norm: float = 1.0
     learning_rate: float = 3e-4
-    lr_min_factor: float = 0.1
     channels: int = 64
     blocks: int = 4
     eval_games: int = 20
@@ -149,7 +148,6 @@ def config_from_args(
         "value_coef": args.value_coef,
         "max_grad_norm": args.max_grad_norm,
         "learning_rate": args.learning_rate,
-        "lr_min_factor": args.lr_min_factor,
         "channels": args.channels,
         "blocks": args.blocks,
         "eval_games": args.eval_games,
