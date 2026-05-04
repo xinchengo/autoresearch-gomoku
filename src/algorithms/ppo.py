@@ -27,6 +27,32 @@ def compute_perspective_returns(rewards: list[float], gamma: float) -> list[floa
     return returns
 
 
+def compute_gae(
+    rewards: list[float],
+    values: list[float],
+    gamma: float,
+    gae_lambda: float,
+) -> tuple[list[float], list[float]]:
+    """Compute GAE advantages and returns for a single episode.
+
+    Uses perspective-aware GAE for zero-sum games.
+    The model's value prediction is always from the current player's perspective,
+    so V(s_{t+1}) is from the opponent's view. The advantage accumulation uses
+    subtraction (not addition) to flip the opponent's advantage sign.
+    """
+    T = len(rewards)
+    advantages = [0.0 for _ in range(T)]
+    returns = [0.0 for _ in range(T)]
+    gae = 0.0
+    for t in range(T - 1, -1, -1):
+        next_value = values[t + 1] if t + 1 < T else 0.0
+        delta = rewards[t] - gamma * next_value - values[t]
+        gae = delta - gamma * gae_lambda * gae
+        advantages[t] = gae
+        returns[t] = gae + values[t]
+    return advantages, returns
+
+
 def collect_self_play(
     model: ActorCriticNet,
     cfg: TrainConfig,
@@ -40,12 +66,14 @@ def collect_self_play(
     actions: list[int] = []
     old_log_probs: list[float] = []
     old_values: list[float] = []
+    advantages: list[float] = []
     returns: list[float] = []
     total_games = 0
 
     while len(actions) < cfg.rollout_steps:
         obs, info = env.reset()
         ep_rewards: list[float] = []
+        ep_values: list[float] = []
         done = False
 
         while not done:
@@ -65,12 +93,15 @@ def collect_self_play(
             old_log_probs.append(float(log_prob_t.item()))
             old_values.append(float(value_t.item()))
             ep_rewards.append(float(reward))
+            ep_values.append(float(value_t.item()))
 
             obs = next_obs
             info = next_info
             done = terminated or truncated
 
-        returns.extend(compute_perspective_returns(ep_rewards, cfg.gamma))
+        ep_adv, ep_ret = compute_gae(ep_rewards, ep_values, cfg.gamma, cfg.gae_lambda)
+        advantages.extend(ep_adv)
+        returns.extend(ep_ret)
         assert len(returns) == len(actions)
         total_games += 1
 
@@ -80,6 +111,7 @@ def collect_self_play(
         "actions": torch.as_tensor(actions, dtype=torch.long, device=device),
         "old_log_probs": torch.as_tensor(old_log_probs, dtype=torch.float32, device=device),
         "old_values": torch.as_tensor(old_values, dtype=torch.float32, device=device),
+        "advantages": torch.as_tensor(advantages, dtype=torch.float32, device=device),
         "returns": torch.as_tensor(returns, dtype=torch.float32, device=device),
         "steps": len(actions),
         "games": total_games,
@@ -99,8 +131,7 @@ def ppo_update(
     old_log_probs = _require_tensor(batch["old_log_probs"])
     old_values = _require_tensor(batch["old_values"])
     returns = _require_tensor(batch["returns"])
-
-    advantages = returns - old_values
+    advantages = _require_tensor(batch["advantages"])
     advantages = (advantages - advantages.mean()) / (advantages.std(unbiased=False) + 1e-8)
     batch_size = actions.shape[0]
     minibatch_size = min(cfg.minibatch_size, batch_size)

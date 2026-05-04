@@ -12,6 +12,8 @@ def get_config() -> TrainConfig:
         rollout_steps=1024,
         ppo_epochs=4,
         minibatch_size=256,
+        gamma=0.99,
+        gae_lambda=0.95,
         learning_rate=3e-4,
         channels=64,
         blocks=4,

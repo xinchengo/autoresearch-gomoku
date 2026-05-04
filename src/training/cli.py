@@ -22,6 +22,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ppo-epochs", type=int)
     parser.add_argument("--minibatch-size", type=int)
     parser.add_argument("--gamma", type=float)
+    parser.add_argument("--gae-lambda", type=float)
     parser.add_argument("--clip-coef", type=float)
     parser.add_argument("--entropy-coef", type=float)
     parser.add_argument("--value-coef", type=float)

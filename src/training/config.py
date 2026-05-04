@@ -27,6 +27,7 @@ class TrainConfig:
     ppo_epochs: int = 4
     minibatch_size: int = 256
     gamma: float = 0.99
+    gae_lambda: float = 0.95
     clip_coef: float = 0.2
     entropy_coef: float = 0.02
     value_coef: float = 0.5
@@ -139,6 +140,7 @@ def config_from_args(
         "ppo_epochs": args.ppo_epochs,
         "minibatch_size": args.minibatch_size,
         "gamma": args.gamma,
+        "gae_lambda": args.gae_lambda,
         "clip_coef": args.clip_coef,
         "entropy_coef": args.entropy_coef,
         "value_coef": args.value_coef,
