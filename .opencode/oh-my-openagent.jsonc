@@ -1,0 +1,42 @@
+{
+  "$schema": "https://raw.githubusercontent.com/code-yeongyu/oh-my-openagent/dev/assets/oh-my-openagent.schema.json",
+
+  "agents": {
+    // Main orchestrator: Claude Opus or Kimi K2.5 work best
+    "sisyphus": {
+      "model": "deepseek/deepseek-v4-pro",
+      "variant": "high",
+      "ultrawork": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+    },
+
+    // Research agents: cheaper models are fine
+    "librarian": { "model": "deepseek/deepseek-v4-flash" },
+    "explore": { "model": "deepseek/deepseek-v4-flash" },
+
+    // Architecture consultation: GPT or Claude Opus
+    "oracle": { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+  },
+
+  "categories": {
+    // Hard logic and architecture: GPT-5.4 xhigh
+    "ultrabrain": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+
+    // Autonomous research and execution
+    "deep": { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+
+    // Creative and design work
+    "artistry": { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+
+    // Quick tasks: fast and cheap
+    "quick": { "model": "deepseek/deepseek-v4-flash" },
+
+    // Low-effort fallback: cheapest available
+    "unspecified-low": { "model": "deepseek/deepseek-v4-flash" },
+
+    // High-effort fallback: best available
+    "unspecified-high": { "model": "deepseek/deepseek-v4-pro", "variant": "max" },
+
+    // Prose and documentation
+    "writing": { "model": "deepseek/deepseek-v4-pro", "variant": "high" },
+  },
+}

@@ -29,6 +29,7 @@ class TrainConfig:
     gamma: float = 0.99
     gae_lambda: float = 0.95
     clip_coef: float = 0.2
+    value_clip_coef: float = 0.2
     entropy_coef: float = 0.02
     value_coef: float = 0.5
     max_grad_norm: float = 1.0
@@ -142,6 +143,7 @@ def config_from_args(
         "gamma": args.gamma,
         "gae_lambda": args.gae_lambda,
         "clip_coef": args.clip_coef,
+        "value_clip_coef": args.value_clip_coef,
         "entropy_coef": args.entropy_coef,
         "value_coef": args.value_coef,
         "max_grad_norm": args.max_grad_norm,

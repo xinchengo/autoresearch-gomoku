@@ -156,7 +156,13 @@ def ppo_update(
                 -advantages[mb]
                 * torch.clamp(ratio, 1.0 - cfg.clip_coef, 1.0 + cfg.clip_coef),
             ).mean()
-            value_loss = F.mse_loss(values, returns[mb])
+            value_pred_clipped = old_values[mb] + torch.clamp(
+                values - old_values[mb], -cfg.value_clip_coef, cfg.value_clip_coef
+            )
+            value_loss = torch.max(
+                F.mse_loss(values, returns[mb]),
+                F.mse_loss(value_pred_clipped, returns[mb]),
+            )
             entropy_loss = entropy.mean()
             loss = policy_loss + cfg.value_coef * value_loss - cfg.entropy_coef * entropy_loss
 
