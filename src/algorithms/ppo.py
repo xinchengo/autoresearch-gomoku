@@ -194,15 +194,6 @@ def collect_vectorized_play(
             if len(actions) >= cfg.rollout_steps:
                 break
 
-    # Flush incomplete episodes
-    for i in range(num_envs):
-        if ep_rewards[i]:
-            ep_adv, ep_ret = compute_gae(
-                ep_rewards[i], ep_values[i], cfg.gamma, cfg.gae_lambda
-            )
-            advantages.extend(ep_adv)
-            returns.extend(ep_ret)
-
     n = len(obs_rows)
     return {
         "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
