@@ -36,8 +36,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-checkpoints", type=parse_checkpoint_specs)
     parser.add_argument("--resume", default="")
     parser.add_argument("--description")
-    parser.add_argument("--curriculum-opponent")
-    parser.add_argument("--curriculum-duration", type=parse_duration)
     return parser
 
 

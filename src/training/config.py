@@ -40,8 +40,6 @@ class TrainConfig:
     eval_opponents: tuple[str, ...] = ("random", "tactical")
     eval_checkpoints: tuple[str, ...] = ()
     description: str = "baseline PPO self-play"
-    curriculum_opponent: str = ""
-    curriculum_duration_seconds: float = 0.0
 
 
 @dataclass
@@ -156,7 +154,5 @@ def config_from_args(
         "eval_opponents": args.eval_opponents,
         "eval_checkpoints": args.eval_checkpoints,
         "description": args.description,
-        "curriculum_opponent": args.curriculum_opponent,
-        "curriculum_duration_seconds": args.curriculum_duration,
     }
     return replace(cfg, **{key: value for key, value in overrides.items() if value is not None})

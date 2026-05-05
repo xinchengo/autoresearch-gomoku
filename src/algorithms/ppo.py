@@ -8,7 +8,6 @@ from torch import Tensor, nn
 from src.training.config import TrainConfig
 from src.gobang import GomokuEnv
 from src.models import ActorCriticNet
-from src.oracle import OracleAgent, make_oracle
 
 
 def tensor_obs(obs: np.ndarray, device: torch.device) -> Tensor:
@@ -115,90 +114,6 @@ def collect_self_play(
         "advantages": torch.as_tensor(advantages, dtype=torch.float32, device=device),
         "returns": torch.as_tensor(returns, dtype=torch.float32, device=device),
         "steps": len(actions),
-        "games": total_games,
-    }
-
-
-def collect_vs_oracle(
-    model: ActorCriticNet,
-    opponent: OracleAgent,
-    cfg: TrainConfig,
-    device: torch.device,
-) -> dict[str, Tensor | int]:
-    """Self-play where opponent is an oracle policy instead of the model.
-
-    Model alternates BLACK/WHITE across episodes. Only model steps are stored
-    for training (oracle steps provide environment transitions).
-    """
-    env = GomokuEnv(board_size=cfg.board_size, n_in_row=cfg.n_in_row)
-    model.eval()
-
-    obs_rows: list[np.ndarray] = []
-    mask_rows: list[np.ndarray] = []
-    actions: list[int] = []
-    old_log_probs: list[float] = []
-    old_values: list[float] = []
-    advantages: list[float] = []
-    returns: list[float] = []
-    total_games = 0
-    model_is_black = True
-
-    while len(actions) < cfg.rollout_steps:
-        obs, info = env.reset()
-        model_player = 1 if model_is_black else -1
-        ep_rewards: list[float] = []
-        ep_values: list[float] = []
-        done = False
-
-        while not done:
-            if info["current_player"] == model_player:
-                mask = info["action_mask"]
-                with torch.no_grad():
-                    action_t, log_prob_t, value_t = model.act(
-                        tensor_obs(obs, device),
-                        tensor_mask(mask, device),
-                        deterministic=False,
-                    )
-                action = int(action_t.item())
-            else:
-                action = opponent.select_action(
-                    env.board, info["current_player"], info["action_mask"]
-                )
-
-            next_obs, reward, terminated, truncated, next_info = env.step(action)
-
-            if info["current_player"] == model_player:
-                obs_rows.append(obs)
-                mask_rows.append(mask.astype(np.bool_))
-                actions.append(action)
-                old_log_probs.append(float(log_prob_t.item()))
-                old_values.append(float(value_t.item()))
-                ep_rewards.append(float(reward))
-                ep_values.append(float(value_t.item()))
-
-            obs = next_obs
-            info = next_info
-            done = terminated or truncated
-
-        if ep_rewards:
-            ep_adv, ep_ret = compute_gae(ep_rewards, ep_values, cfg.gamma, cfg.gae_lambda)
-            advantages.extend(ep_adv)
-            returns.extend(ep_ret)
-
-        assert len(returns) == len(actions), f"{len(returns)} != {len(actions)}"
-        model_is_black = not model_is_black
-        total_games += 1
-
-    n = len(obs_rows)
-    return {
-        "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
-        "masks": torch.as_tensor(np.asarray(mask_rows[:n]), dtype=torch.bool, device=device),
-        "actions": torch.as_tensor(actions[:n], dtype=torch.long, device=device),
-        "old_log_probs": torch.as_tensor(old_log_probs[:n], dtype=torch.float32, device=device),
-        "old_values": torch.as_tensor(old_values[:n], dtype=torch.float32, device=device),
-        "advantages": torch.as_tensor(advantages[:n], dtype=torch.float32, device=device),
-        "returns": torch.as_tensor(returns[:n], dtype=torch.float32, device=device),
-        "steps": n,
         "games": total_games,
     }
 
