@@ -167,6 +167,105 @@ def collect_self_play(
     }
 
 
+def collect_mixed_play(
+    model: ActorCriticNet,
+    cfg: TrainConfig,
+    device: torch.device,
+    *,
+    rng: np.random.Generator | None = None,
+) -> dict[str, Tensor | int]:
+    """Self-play with mixed opponents: self, random, tactical.
+
+    Each episode randomly selects an opponent type. This gives the model:
+    - Wins against random (positive reinforcement)
+    - Threat exposure against tactical (learn to block/extend)
+    - Self-play consolidation
+    """
+    if rng is None:
+        rng = np.random.default_rng()
+    env = GomokuEnv(board_size=cfg.board_size, n_in_row=cfg.n_in_row)
+    model.eval()
+    tactical = make_oracle("tactical", cfg.board_size, cfg.n_in_row)
+    random_opponent = make_oracle("random", cfg.board_size, cfg.n_in_row)
+
+    obs_rows: list[np.ndarray] = []
+    mask_rows: list[np.ndarray] = []
+    actions: list[int] = []
+    old_log_probs: list[float] = []
+    old_values: list[float] = []
+    advantages: list[float] = []
+    returns: list[float] = []
+    total_games = 0
+
+    opponent_types = ("self", "random", "tactical")
+
+    while len(actions) < cfg.rollout_steps:
+        obs, info = env.reset()
+        opp_type = str(rng.choice(opponent_types))
+        ep_rewards: list[float] = []
+        ep_values: list[float] = []
+        done = False
+
+        while not done:
+            current_player = int(info["current_player"])
+            if opp_type == "self" or current_player == 1:
+                mask = info["action_mask"]
+                with torch.no_grad():
+                    action_t, log_prob_t, value_t = model.act(
+                        tensor_obs(obs, device),
+                        tensor_mask(mask, device),
+                        deterministic=False,
+                    )
+                action = int(action_t.item())
+            elif opp_type == "tactical":
+                action = tactical.select_action(
+                    env.board, current_player, info["action_mask"]
+                )
+            else:
+                action = random_opponent.select_action(
+                    env.board, current_player, info["action_mask"]
+                )
+
+            next_obs, reward, terminated, truncated, next_info = env.step(action)
+            bonus = compute_threat_bonus(
+                env.board, action, current_player, cfg.n_in_row, cfg.threat_bonus_scale
+            )
+
+            if opp_type == "self" or current_player == 1:
+                obs_rows.append(obs)
+                mask_rows.append(mask.astype(np.bool_))
+                actions.append(action)
+                old_log_probs.append(float(log_prob_t.item()))
+                old_values.append(float(value_t.item()))
+                ep_rewards.append(float(reward) + bonus)
+                ep_values.append(float(value_t.item()))
+
+            obs = next_obs
+            info = next_info
+            done = terminated or truncated
+
+        if ep_rewards:
+            ep_adv, ep_ret = compute_gae(ep_rewards, ep_values, cfg.gamma, cfg.gae_lambda)
+            advantages.extend(ep_adv)
+            returns.extend(ep_ret)
+
+        assert len(returns) == len(actions), f"{len(returns)} != {len(actions)}"
+        total_games += 1
+
+    n = len(obs_rows)
+    return {
+        "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
+        "masks": torch.as_tensor(np.asarray(mask_rows[:n]), dtype=torch.bool, device=device),
+        "actions": torch.as_tensor(actions[:n], dtype=torch.long, device=device),
+        "old_log_probs": torch.as_tensor(old_log_probs[:n], dtype=torch.float32, device=device),
+        "old_values": torch.as_tensor(old_values[:n], dtype=torch.float32, device=device),
+        "advantages": torch.as_tensor(advantages[:n], dtype=torch.float32, device=device),
+        "returns": torch.as_tensor(returns[:n], dtype=torch.float32, device=device),
+        "steps": n,
+        "games": total_games,
+    }
+
+
 def ppo_update(
     model: ActorCriticNet,
     optimizer: torch.optim.Optimizer,
