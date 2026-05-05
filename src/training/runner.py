@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict
+from datetime import datetime, timezone
 from pathlib import Path
 
 import torch
@@ -30,6 +31,9 @@ def train(args) -> None:
     set_seed(cfg.seed)
 
     run_path = Path(cfg.run_dir) / cfg.tag
+    run_path.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    run_path = Path(cfg.run_dir) / f"{timestamp}_{cfg.tag}"
     run_path.mkdir(parents=True, exist_ok=True)
     metrics_path = run_path / "metrics.jsonl"
     results_path = run_path / "results.tsv"
