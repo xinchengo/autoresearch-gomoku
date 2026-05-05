@@ -132,5 +132,8 @@ def test_trainer_zero_duration_writes_final_checkpoint(tmp_path) -> None:
     )
     assert isinstance(args, Namespace)
     train(args)
-    assert (tmp_path / "unit" / "checkpoints" / "final.pt").exists()
-    assert (tmp_path / "unit" / "metrics.jsonl").exists()
+    run_dirs = list(tmp_path.glob("*_unit"))
+    assert len(run_dirs) == 1, f"expected 1 run dir, got {run_dirs}"
+    run_dir = run_dirs[0]
+    assert (run_dir / "checkpoints" / "final.pt").exists()
+    assert (run_dir / "metrics.jsonl").exists()

@@ -25,6 +25,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gae-lambda", type=float)
     parser.add_argument("--clip-coef", type=float)
     parser.add_argument("--value-clip-coef", type=float)
+    parser.add_argument("--threat-bonus-scale", type=float)
     parser.add_argument("--entropy-coef", type=float)
     parser.add_argument("--value-coef", type=float)
     parser.add_argument("--max-grad-norm", type=float)
