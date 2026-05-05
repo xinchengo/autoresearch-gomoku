@@ -24,7 +24,7 @@ class TrainConfig:
     checkpoint_interval_seconds: float = 1800.0
     eval_interval_seconds: float = 1800.0
     rollout_steps: int = 1024
-    ppo_epochs: int = 8
+    ppo_epochs: int = 4
     minibatch_size: int = 256
     gamma: float = 0.99
     gae_lambda: float = 0.95

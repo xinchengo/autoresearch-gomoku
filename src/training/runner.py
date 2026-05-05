@@ -97,6 +97,7 @@ def _run_training_loop(
             state.updates += 1
 
             now = time.time()
+            elapsed = now - start_time
             remaining_progress = max(0.0, cfg.duration_seconds - progress.n)
             progress.update(min(max(0.0, now - last_progress), remaining_progress))
             last_progress = now
@@ -106,10 +107,12 @@ def _run_training_loop(
                 {
                     "event": "update",
                     "time": now,
-                    "elapsed_seconds": now - start_time,
+                    "elapsed_seconds": elapsed,
                     "state": asdict(state),
                     "rollout_steps": int(batch["steps"]),
                     "rollout_games": int(batch["games"]),
+                    "updates_per_hour": state.updates / max(elapsed, 1) * 3600,
+                    "steps_per_second": state.env_steps / max(elapsed, 1),
                     **update_stats,
                 },
             )
