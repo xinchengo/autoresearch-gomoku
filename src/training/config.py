@@ -31,7 +31,6 @@ class TrainConfig:
     clip_coef: float = 0.2
     value_clip_coef: float = 0.2
     threat_bonus_scale: float = 0.1
-    mixed_opponents: bool = True
     entropy_coef: float = 0.02
     value_coef: float = 0.5
     max_grad_norm: float = 1.0
@@ -147,7 +146,6 @@ def config_from_args(
         "clip_coef": args.clip_coef,
         "value_clip_coef": args.value_clip_coef,
         "threat_bonus_scale": args.threat_bonus_scale,
-        "mixed_opponents": args.mixed_opponents,
         "entropy_coef": args.entropy_coef,
         "value_coef": args.value_coef,
         "max_grad_norm": args.max_grad_norm,

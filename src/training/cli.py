@@ -26,8 +26,6 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--clip-coef", type=float)
     parser.add_argument("--value-clip-coef", type=float)
     parser.add_argument("--threat-bonus-scale", type=float)
-    parser.add_argument("--mixed-opponents", action="store_true", default=None)
-    parser.add_argument("--no-mixed-opponents", action="store_false", dest="mixed_opponents")
     parser.add_argument("--entropy-coef", type=float)
     parser.add_argument("--value-coef", type=float)
     parser.add_argument("--max-grad-norm", type=float)
