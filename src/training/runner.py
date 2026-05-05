@@ -9,7 +9,7 @@ import torch
 from torch.optim import AdamW
 from tqdm import tqdm
 
-from src.algorithms.ppo import collect_self_play, ppo_update
+from src.algorithms.ppo import collect_self_play, collect_vs_oracle, ppo_update
 from src.training.checkpointing import (
     append_jsonl,
     append_results,
@@ -21,6 +21,7 @@ from src.training.checkpointing import (
 from src.training.config import TrainConfig, TrainState, config_from_args, resolve_device, set_seed
 from src.training.evaluation import evaluate
 from src.models import ActorCriticNet
+from src.oracle import make_oracle
 
 
 def train(args) -> None:
@@ -85,9 +86,16 @@ def _run_training_loop(
 
     progress = tqdm(total=cfg.duration_seconds, desc=f"train:{cfg.tag}", unit="s")
     last_progress = start_time
+    curriculum_opponent = None
+    if cfg.curriculum_opponent and cfg.curriculum_duration_seconds > 0:
+        curriculum_opponent = make_oracle(cfg.curriculum_opponent, cfg.board_size, cfg.n_in_row)
     try:
         while time.time() < end_time:
-            batch = collect_self_play(model, cfg, device)
+            elapsed = time.time() - start_time
+            if curriculum_opponent and elapsed < cfg.curriculum_duration_seconds:
+                batch = collect_vs_oracle(model, curriculum_opponent, cfg, device)
+            else:
+                batch = collect_self_play(model, cfg, device)
             update_stats = ppo_update(model, optimizer, batch, cfg)
             state.env_steps += int(batch["steps"])
             state.games += int(batch["games"])
