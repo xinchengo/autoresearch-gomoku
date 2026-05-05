@@ -31,6 +31,7 @@ class TrainConfig:
     clip_coef: float = 0.2
     value_clip_coef: float = 0.2
     threat_bonus_scale: float = 0.3
+    freeze_body: bool = False
     mixed_opponents: bool = True
     entropy_coef: float = 0.02
     value_coef: float = 0.5
@@ -161,5 +162,6 @@ def config_from_args(
         "eval_opponents": args.eval_opponents,
         "eval_checkpoints": args.eval_checkpoints,
         "description": args.description,
+        "freeze_body": args.freeze_body,
     }
     return replace(cfg, **{key: value for key, value in overrides.items() if value is not None})

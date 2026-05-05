@@ -26,6 +26,7 @@ from src.models import ActorCriticNet
 def train(args) -> None:
     load_device = resolve_device(args.device or "auto")
     saved_checkpoint = load_torch_checkpoint(args.resume, load_device) if args.resume else None
+    pretrained_checkpoint = load_torch_checkpoint(args.pretrained, load_device) if args.pretrained else None
     cfg = config_from_args(args, saved_checkpoint.get("config") if saved_checkpoint else None)
     device = resolve_device(cfg.device)
     set_seed(cfg.seed)
@@ -47,7 +48,13 @@ def train(args) -> None:
     optimizer = AdamW(model.parameters(), lr=cfg.learning_rate)
     state = TrainState()
 
-    if saved_checkpoint:
+    if pretrained_checkpoint:
+        model.load_state_dict(pretrained_checkpoint["model"])
+        if cfg.freeze_body:
+            for name, param in model.named_parameters():
+                if "stem" in name or "body" in name:
+                    param.requires_grad = False
+    elif saved_checkpoint:
         model.load_state_dict(saved_checkpoint["model"])
         optimizer.load_state_dict(saved_checkpoint["optimizer"])
         state = TrainState(**saved_checkpoint.get("state", {}))
