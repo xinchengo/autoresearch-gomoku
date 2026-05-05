@@ -41,7 +41,7 @@ class TrainConfig:
     blocks: int = 4
     eval_games: int = 40
     num_envs: int = 32
-    vectorized_collect: bool = True
+    vectorized_collect: bool = False
     eval_opponents: tuple[str, ...] = ("random", "tactical")
     eval_checkpoints: tuple[str, ...] = ()
     description: str = "baseline PPO self-play"
