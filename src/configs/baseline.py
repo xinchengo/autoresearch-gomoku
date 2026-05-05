@@ -10,7 +10,7 @@ def get_config() -> TrainConfig:
         checkpoint_interval_seconds=1800.0,
         eval_interval_seconds=1800.0,
         rollout_steps=1024,
-        ppo_epochs=4,
+        ppo_epochs=8,
         minibatch_size=256,
         gamma=0.99,
         gae_lambda=0.95,
