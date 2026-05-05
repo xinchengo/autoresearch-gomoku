@@ -9,7 +9,7 @@ import torch
 from torch.optim import AdamW
 from tqdm import tqdm
 
-from src.algorithms.ppo import collect_self_play, ppo_update
+from src.algorithms.ppo import collect_self_play, collect_vectorized_play, ppo_update
 from src.training.checkpointing import (
     append_jsonl,
     append_results,
@@ -87,7 +87,10 @@ def _run_training_loop(
     last_progress = start_time
     try:
         while time.time() < end_time:
-            batch = collect_self_play(model, cfg, device)
+            if cfg.vectorized_collect:
+                batch = collect_vectorized_play(model, cfg, device)
+            else:
+                batch = collect_self_play(model, cfg, device)
             update_stats = ppo_update(model, optimizer, batch, cfg)
             state.env_steps += int(batch["steps"])
             state.games += int(batch["games"])

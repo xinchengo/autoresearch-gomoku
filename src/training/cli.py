@@ -32,6 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--learning-rate", type=float)
     parser.add_argument("--channels", type=int)
     parser.add_argument("--blocks", type=int)
+    parser.add_argument("--num-envs", type=int)
     parser.add_argument("--eval-games", type=int)
     parser.add_argument("--eval-opponents", type=parse_opponents)
     parser.add_argument("--eval-checkpoints", type=parse_checkpoint_specs)

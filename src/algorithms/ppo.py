@@ -8,6 +8,8 @@ from torch import Tensor, nn
 from src.training.config import TrainConfig
 from src.gobang import GomokuEnv
 from src.models import ActorCriticNet
+from src.oracle import make_oracle
+from src.algorithms.numba_utils import compute_threat_bonus_numba
 
 
 def tensor_obs(obs: np.ndarray, device: torch.device) -> Tensor:
@@ -25,6 +27,25 @@ def compute_perspective_returns(rewards: list[float], gamma: float) -> list[floa
         running = rewards[idx] - gamma * running
         returns[idx] = running
     return returns
+
+
+def compute_gae(
+    rewards: list[float],
+    values: list[float],
+    gamma: float,
+    gae_lambda: float,
+) -> tuple[list[float], list[float]]:
+    T = len(rewards)
+    advantages = [0.0 for _ in range(T)]
+    returns = [0.0 for _ in range(T)]
+    gae = 0.0
+    for t in range(T - 1, -1, -1):
+        next_value = values[t + 1] if t + 1 < T else 0.0
+        delta = rewards[t] - gamma * next_value - values[t]
+        gae = delta - gamma * gae_lambda * gae
+        advantages[t] = gae
+        returns[t] = gae + values[t]
+    return advantages, returns
 
 
 def _count_line(board: np.ndarray, row: int, col: int, dr: int, dc: int, player: int) -> int:
@@ -73,30 +94,118 @@ def compute_threat_bonus(
     return bonus
 
 
-def compute_gae(
-    rewards: list[float],
-    values: list[float],
-    gamma: float,
-    gae_lambda: float,
-) -> tuple[list[float], list[float]]:
-    """Compute GAE advantages and returns for a single episode.
+compute_threat_bonus = compute_threat_bonus_numba
 
-    Uses perspective-aware GAE for zero-sum games.
-    The model's value prediction is always from the current player's perspective,
-    so V(s_{t+1}) is from the opponent's view. The advantage accumulation uses
-    subtraction (not addition) to flip the opponent's advantage sign.
+
+def collect_vectorized_play(
+    model: ActorCriticNet,
+    cfg: TrainConfig,
+    device: torch.device,
+) -> dict[str, Tensor | int]:
+    """Self-play with multiple parallel environments for batched GPU inference.
+
+    Runs num_envs GomokuEnv instances in round-robin, batching observations
+    into a single GPU forward pass. This increases GPU utilization by processing
+    multiple environments per model.act() call.
     """
-    T = len(rewards)
-    advantages = [0.0 for _ in range(T)]
-    returns = [0.0 for _ in range(T)]
-    gae = 0.0
-    for t in range(T - 1, -1, -1):
-        next_value = values[t + 1] if t + 1 < T else 0.0
-        delta = rewards[t] - gamma * next_value - values[t]
-        gae = delta - gamma * gae_lambda * gae
-        advantages[t] = gae
-        returns[t] = gae + values[t]
-    return advantages, returns
+    num_envs = cfg.num_envs
+    envs = [GomokuEnv(board_size=cfg.board_size, n_in_row=cfg.n_in_row) for _ in range(num_envs)]
+    model.eval()
+
+    # Per-environment state
+    obs_list = [None] * num_envs
+    mask_list = [None] * num_envs
+    info_list = [None] * num_envs
+    done_list = [True] * num_envs
+
+    # Episode buffers per environment
+    ep_rewards: list[list[float]] = [[] for _ in range(num_envs)]
+    ep_values: list[list[float]] = [[] for _ in range(num_envs)]
+
+    # Global flat buffers
+    obs_rows: list[np.ndarray] = []
+    mask_rows: list[np.ndarray] = []
+    actions: list[int] = []
+    old_log_probs: list[float] = []
+    old_values: list[float] = []
+    advantages: list[float] = []
+    returns: list[float] = []
+    total_games = 0
+
+    while len(actions) < cfg.rollout_steps:
+        # Reset completed environments
+        for i in range(num_envs):
+            if done_list[i]:
+                obs, info = envs[i].reset()
+                obs_list[i] = obs
+                mask_list[i] = info["action_mask"].astype(np.bool_)
+                info_list[i] = info
+                done_list[i] = False
+
+        # Collect active environments
+        active = [i for i in range(num_envs) if not done_list[i]]
+        if not active:
+            continue
+
+        # Batch observations and masks
+        batch_obs = np.stack([obs_list[i] for i in active])
+        batch_mask = np.stack([mask_list[i] for i in active])
+        batch_tensor_obs = torch.as_tensor(batch_obs, dtype=torch.float32, device=device)
+        batch_tensor_mask = torch.as_tensor(batch_mask, dtype=torch.bool, device=device)
+
+        with torch.no_grad():
+            actions_t, log_probs_t, values_t = model.act(
+                batch_tensor_obs, batch_tensor_mask, deterministic=False
+            )
+
+        # Step each active environment
+        for j, i in enumerate(active):
+            action = int(actions_t[j].item())
+            current_player = int(info_list[i]["current_player"])
+            next_obs, reward, terminated, truncated, next_info = envs[i].step(action)
+            bonus = compute_threat_bonus(
+                envs[i].board, action, current_player, cfg.n_in_row, cfg.threat_bonus_scale
+            )
+
+            obs_rows.append(obs_list[i])
+            mask_rows.append(mask_list[i])
+            actions.append(action)
+            old_log_probs.append(float(log_probs_t[j].item()))
+            old_values.append(float(values_t[j].item()))
+            ep_rewards[i].append(float(reward) + bonus)
+            ep_values[i].append(float(values_t[j].item()))
+
+            obs_list[i] = next_obs
+            mask_list[i] = next_info["action_mask"].astype(np.bool_)
+            info_list[i] = next_info
+            done_list[i] = terminated or truncated
+
+            if done_list[i]:
+                if ep_rewards[i]:
+                    ep_adv, ep_ret = compute_gae(
+                        ep_rewards[i], ep_values[i], cfg.gamma, cfg.gae_lambda
+                    )
+                    advantages.extend(ep_adv)
+                    returns.extend(ep_ret)
+                ep_rewards[i] = []
+                ep_values[i] = []
+                total_games += 1
+
+            if len(actions) >= cfg.rollout_steps:
+                break
+
+    n = len(obs_rows)
+    return {
+        "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
+        "masks": torch.as_tensor(np.asarray(mask_rows[:n]), dtype=torch.bool, device=device),
+        "actions": torch.as_tensor(actions[:n], dtype=torch.long, device=device),
+        "old_log_probs": torch.as_tensor(old_log_probs[:n], dtype=torch.float32, device=device),
+        "old_values": torch.as_tensor(old_values[:n], dtype=torch.float32, device=device),
+        "advantages": torch.as_tensor(advantages[:n], dtype=torch.float32, device=device),
+        "returns": torch.as_tensor(returns[:n], dtype=torch.float32, device=device),
+        "steps": n,
+        "games": total_games,
+    }
 
 
 def collect_self_play(

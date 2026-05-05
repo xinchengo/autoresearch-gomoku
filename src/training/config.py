@@ -40,6 +40,8 @@ class TrainConfig:
     channels: int = 64
     blocks: int = 4
     eval_games: int = 40
+    num_envs: int = 32
+    vectorized_collect: bool = True
     eval_opponents: tuple[str, ...] = ("random", "tactical")
     eval_checkpoints: tuple[str, ...] = ()
     description: str = "baseline PPO self-play"
@@ -154,6 +156,7 @@ def config_from_args(
         "learning_rate": args.learning_rate,
         "channels": args.channels,
         "blocks": args.blocks,
+        "num_envs": args.num_envs,
         "eval_games": args.eval_games,
         "eval_opponents": args.eval_opponents,
         "eval_checkpoints": args.eval_checkpoints,
