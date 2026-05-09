@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--channels", type=int)
     parser.add_argument("--blocks", type=int)
     parser.add_argument("--num-envs", type=int)
+    parser.add_argument("--vectorized-collect", action="store_true", default=None, dest="vectorized_collect")
+    parser.add_argument("--no-vectorized-collect", action="store_false", dest="vectorized_collect")
     parser.add_argument("--eval-games", type=int)
     parser.add_argument("--eval-opponents", type=parse_opponents)
     parser.add_argument("--eval-checkpoints", type=parse_checkpoint_specs)

@@ -159,6 +159,7 @@ def config_from_args(
         "channels": args.channels,
         "blocks": args.blocks,
         "num_envs": args.num_envs,
+        "vectorized_collect": args.vectorized_collect,
         "eval_games": args.eval_games,
         "eval_opponents": args.eval_opponents,
         "eval_checkpoints": args.eval_checkpoints,
