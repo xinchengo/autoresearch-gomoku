@@ -11,6 +11,7 @@ from src.gobang import GomokuEnv
 from src.models import ActorCriticNet
 from src.oracle import make_oracle
 from src.algorithms.numba_utils import compute_threat_bonus_numba
+from src.algorithms.numba_env import FastEnvState, action_mask_numba, observation_numba
 
 
 def tensor_obs(obs: np.ndarray, device: torch.device) -> Tensor:
@@ -110,7 +111,7 @@ def collect_vectorized_play(
     multiple environments per model.act() call.
     """
     num_envs = cfg.num_envs
-    envs = [GomokuEnv(board_size=cfg.board_size, n_in_row=cfg.n_in_row) for _ in range(num_envs)]
+    envs = [FastEnvState(cfg.board_size) for _ in range(num_envs)]
     model.eval()
 
     # Per-environment state
@@ -137,10 +138,10 @@ def collect_vectorized_play(
         # Reset completed environments
         for i in range(num_envs):
             if done_list[i]:
-                obs, info = envs[i].reset()
+                obs, mask, player = envs[i].reset()
                 obs_list[i] = obs
-                mask_list[i] = info["action_mask"].astype(np.bool_)
-                info_list[i] = info
+                mask_list[i] = mask
+                info_list[i] = {"current_player": player}
                 done_list[i] = False
 
         # Collect active environments
@@ -164,7 +165,7 @@ def collect_vectorized_play(
 
         with ThreadPoolExecutor(max_workers=min(num_envs, 32)) as pool:
             futures = {
-                pool.submit(envs[i].step, int(action_list[j])): (j, i)
+                pool.submit(envs[i].step, int(action_list[j]), cfg.n_in_row): (j, i)
                 for j, i in enumerate(active)
             }
             step_results: dict[int, tuple] = {}
@@ -173,7 +174,7 @@ def collect_vectorized_play(
                 step_results[i] = future.result()
 
         for j, i in enumerate(active):
-            next_obs, reward, terminated, truncated, next_info = step_results[i]
+            next_obs, next_mask, reward, terminated, _next_player = step_results[i]
             action = int(action_list[j])
             current_player = int(info_list[i]["current_player"])
             bonus = compute_threat_bonus(
@@ -189,9 +190,9 @@ def collect_vectorized_play(
             ep_values[i].append(float(values_t[j].item()))
 
             obs_list[i] = next_obs
-            mask_list[i] = next_info["action_mask"].astype(np.bool_)
-            info_list[i] = next_info
-            done_list[i] = terminated or truncated
+            mask_list[i] = next_mask
+            info_list[i] = {"current_player": _next_player}
+            done_list[i] = terminated
 
             if done_list[i]:
                 if ep_rewards[i]:
