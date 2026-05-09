@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -157,12 +158,24 @@ def collect_vectorized_play(
             actions_t, log_probs_t, values_t = model.act(
                 batch_tensor_obs, batch_tensor_mask, deterministic=False
             )
+        action_list = actions_t.cpu().tolist()
+        logp_list = log_probs_t.cpu().tolist()
+        val_list = values_t.cpu().tolist()
 
-        # Step each active environment
+        with ThreadPoolExecutor(max_workers=min(num_envs, 32)) as pool:
+            futures = {
+                pool.submit(envs[i].step, int(action_list[j])): (j, i)
+                for j, i in enumerate(active)
+            }
+            step_results: dict[int, tuple] = {}
+            for future in futures:
+                j, i = futures[future]
+                step_results[i] = future.result()
+
         for j, i in enumerate(active):
-            action = int(actions_t[j].item())
+            next_obs, reward, terminated, truncated, next_info = step_results[i]
+            action = int(action_list[j])
             current_player = int(info_list[i]["current_player"])
-            next_obs, reward, terminated, truncated, next_info = envs[i].step(action)
             bonus = compute_threat_bonus(
                 envs[i].board, action, current_player, cfg.n_in_row, cfg.threat_bonus_scale
             )
