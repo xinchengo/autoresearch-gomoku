@@ -113,7 +113,6 @@ def _run_training_loop(
             else:
                 batch = collect_self_play(model, cfg, device)
 
-            train_stream.synchronize()
             with torch.cuda.stream(train_stream):
                 update_stats = ppo_update(model, optimizer, batch, cfg)
             state.env_steps += int(batch["steps"])
