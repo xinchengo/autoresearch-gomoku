@@ -113,6 +113,7 @@ def collect_vectorized_play(
     num_envs = cfg.num_envs
     envs = [FastEnvState(cfg.board_size) for _ in range(num_envs)]
     model.eval()
+    pool = ThreadPoolExecutor(max_workers=min(num_envs, 128))
 
     # Per-environment state
     obs_list = [None] * num_envs
@@ -163,15 +164,14 @@ def collect_vectorized_play(
         logp_list = log_probs_t.cpu().tolist()
         val_list = values_t.cpu().tolist()
 
-        with ThreadPoolExecutor(max_workers=min(num_envs, 32)) as pool:
-            futures = {
-                pool.submit(envs[i].step, int(action_list[j]), cfg.n_in_row): (j, i)
-                for j, i in enumerate(active)
-            }
-            step_results: dict[int, tuple] = {}
-            for future in futures:
-                j, i = futures[future]
-                step_results[i] = future.result()
+        futures = {
+            pool.submit(envs[i].step, int(action_list[j]), cfg.n_in_row): (j, i)
+            for j, i in enumerate(active)
+        }
+        step_results: dict[int, tuple] = {}
+        for future in futures:
+            j, i = futures[future]
+            step_results[i] = future.result()
 
         for j, i in enumerate(active):
             next_obs, next_mask, reward, terminated, _next_player = step_results[i]
@@ -218,6 +218,7 @@ def collect_vectorized_play(
 
     n = len(obs_rows)
     assert n == len(advantages) == len(returns), f"steps={n} adv={len(advantages)} ret={len(returns)}"
+    pool.shutdown(wait=False)
     return {
         "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
         "masks": torch.as_tensor(np.asarray(mask_rows[:n]), dtype=torch.bool, device=device),
