@@ -94,7 +94,6 @@ def _run_training_loop(
 
     progress = tqdm(total=cfg.duration_seconds, desc=f"train:{cfg.tag}", unit="s")
     last_progress = start_time
-    train_stream = torch.cuda.Stream()
     try:
         while time.time() < end_time:
             if cfg.vectorized_collect:
@@ -112,9 +111,7 @@ def _run_training_loop(
                         batch[k] = int(batch[k])
             else:
                 batch = collect_self_play(model, cfg, device)
-
-            with torch.cuda.stream(train_stream):
-                update_stats = ppo_update(model, optimizer, batch, cfg)
+            update_stats = ppo_update(model, optimizer, batch, cfg)
             state.env_steps += int(batch["steps"])
             state.games += int(batch["games"])
             state.updates += 1
