@@ -94,8 +94,7 @@ def _run_training_loop(
 
     progress = tqdm(total=cfg.duration_seconds, desc=f"train:{cfg.tag}", unit="s")
     last_progress = start_time
-    train_thread: threading.Thread | None = None
-    pending_batch: dict | None = None
+    train_stream = torch.cuda.Stream()
     try:
         while time.time() < end_time:
             if cfg.vectorized_collect:
@@ -114,21 +113,12 @@ def _run_training_loop(
             else:
                 batch = collect_self_play(model, cfg, device)
 
-            if train_thread is not None:
-                train_thread.join()
-                update_stats = train_thread.result if hasattr(train_thread, 'result') else {}
-                state.env_steps += int(pending_batch["steps"])
-                state.games += int(pending_batch["games"])
-                state.updates += 1
-            else:
-                update_stats = {}
-
-            pending_batch = batch
-            def _train_wrapper():
-                result = ppo_update(model, optimizer, batch, cfg)
-                train_thread.result = result
-            train_thread = threading.Thread(target=_train_wrapper, daemon=True)
-            train_thread.start()
+            train_stream.synchronize()
+            with torch.cuda.stream(train_stream):
+                update_stats = ppo_update(model, optimizer, batch, cfg)
+            state.env_steps += int(batch["steps"])
+            state.games += int(batch["games"])
+            state.updates += 1
 
             now = time.time()
             elapsed = now - start_time
@@ -143,8 +133,8 @@ def _run_training_loop(
                     "time": now,
                     "elapsed_seconds": elapsed,
                     "state": asdict(state),
-                    "rollout_steps": int(pending_batch["steps"]) if pending_batch else 0,
-                    "rollout_games": int(pending_batch["games"]) if pending_batch else 0,
+                    "rollout_steps": int(batch["steps"]),
+                    "rollout_games": int(batch["games"]),
                     "updates_per_hour": state.updates / max(elapsed, 1) * 3600,
                     "steps_per_second": state.env_steps / max(elapsed, 1),
                     **update_stats,
