@@ -96,6 +96,17 @@ def _run_training_loop(
         while time.time() < end_time:
             if cfg.vectorized_collect:
                 batch = collect_vectorized_play(model, cfg, device)
+            elif cfg.grad_accum_steps > 1:
+                batches = [collect_self_play(model, cfg, device) for _ in range(cfg.grad_accum_steps)]
+                batch = {
+                    k: torch.cat([b[k] for b in batches], dim=0)
+                    if isinstance(batches[0][k], torch.Tensor) and k not in ("steps", "games")
+                    else (sum(b[k] for b in batches) if k in ("steps", "games") else batches[0][k])
+                    for k in batches[0]
+                }
+                for k in ("steps", "games"):
+                    if k in batch and not isinstance(batch[k], int):
+                        batch[k] = int(batch[k])
             else:
                 batch = collect_self_play(model, cfg, device)
             update_stats = ppo_update(model, optimizer, batch, cfg)

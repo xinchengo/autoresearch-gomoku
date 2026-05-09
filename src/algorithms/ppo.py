@@ -194,7 +194,16 @@ def collect_vectorized_play(
             if len(actions) >= cfg.rollout_steps:
                 break
 
+    for i in range(num_envs):
+        if ep_rewards[i]:
+            ep_adv, ep_ret = compute_gae(
+                ep_rewards[i], ep_values[i], cfg.gamma, cfg.gae_lambda
+            )
+            advantages.extend(ep_adv)
+            returns.extend(ep_ret)
+
     n = len(obs_rows)
+    assert n == len(advantages) == len(returns), f"steps={n} adv={len(advantages)} ret={len(returns)}"
     return {
         "obs": torch.as_tensor(np.asarray(obs_rows[:n]), dtype=torch.float32, device=device),
         "masks": torch.as_tensor(np.asarray(mask_rows[:n]), dtype=torch.bool, device=device),

@@ -33,11 +33,14 @@ def rng_state() -> dict[str, Any]:
 def restore_rng_state(state: dict[str, Any] | None) -> None:
     if not state:
         return
-    random.setstate(state["python"])
-    np.random.set_state(state["numpy"])
-    torch.set_rng_state(state["torch"])
-    if "cuda" in state and torch.cuda.is_available():
-        torch.cuda.set_rng_state_all(state["cuda"])
+    try:
+        random.setstate(state["python"])
+        np.random.set_state(state["numpy"])
+        torch.set_rng_state(state["torch"])
+        if "cuda" in state and torch.cuda.is_available():
+            torch.cuda.set_rng_state_all(state["cuda"])
+    except (TypeError, ValueError, RuntimeError):
+        pass
 
 
 def checkpoint_payload(
