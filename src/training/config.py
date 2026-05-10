@@ -31,6 +31,8 @@ class TrainConfig:
     clip_coef: float = 0.2
     value_clip_coef: float = 0.2
     threat_bonus_scale: float = 0.3
+    pretrained_opponent: str = ""
+    explore_eps: float = 0.0
     freeze_body: bool = False
     mixed_opponents: bool = True
     entropy_coef: float = 0.02
@@ -152,6 +154,8 @@ def config_from_args(
         "clip_coef": args.clip_coef,
         "value_clip_coef": args.value_clip_coef,
         "threat_bonus_scale": args.threat_bonus_scale,
+        "pretrained_opponent": args.pretrained_opponent,
+        "explore_eps": args.explore_eps,
         "entropy_coef": args.entropy_coef,
         "value_coef": args.value_coef,
         "max_grad_norm": args.max_grad_norm,

@@ -103,29 +103,26 @@ def collect_vectorized_play(
     model: ActorCriticNet,
     cfg: TrainConfig,
     device: torch.device,
+    *,
+    opponent: ActorCriticNet | None = None,
 ) -> dict[str, Tensor | int]:
-    """Self-play with multiple parallel environments for batched GPU inference.
-
-    Runs num_envs GomokuEnv instances in round-robin, batching observations
-    into a single GPU forward pass. This increases GPU utilization by processing
-    multiple environments per model.act() call.
-    """
     num_envs = cfg.num_envs
     envs = [FastEnvState(cfg.board_size) for _ in range(num_envs)]
     model.eval()
+    if opponent is not None:
+        opponent.eval()
     pool = ThreadPoolExecutor(max_workers=min(num_envs, 128))
+    rng = np.random.default_rng()
 
-    # Per-environment state
     obs_list = [None] * num_envs
     mask_list = [None] * num_envs
     info_list = [None] * num_envs
     done_list = [True] * num_envs
+    use_opp = [False] * num_envs
+    model_player = [1] * num_envs
 
-    # Episode buffers per environment
     ep_rewards: list[list[float]] = [[] for _ in range(num_envs)]
     ep_values: list[list[float]] = [[] for _ in range(num_envs)]
-
-    # Global flat buffers
     obs_rows: list[np.ndarray] = []
     mask_rows: list[np.ndarray] = []
     actions: list[int] = []
@@ -136,7 +133,6 @@ def collect_vectorized_play(
     total_games = 0
 
     while len(actions) < cfg.rollout_steps:
-        # Reset completed environments
         for i in range(num_envs):
             if done_list[i]:
                 obs, mask, player = envs[i].reset()
@@ -144,63 +140,82 @@ def collect_vectorized_play(
                 mask_list[i] = mask
                 info_list[i] = {"current_player": player}
                 done_list[i] = False
+                if opponent is not None and rng.random() < 0.5:
+                    use_opp[i] = True
+                    model_player[i] = -1
+                else:
+                    use_opp[i] = False
+                    model_player[i] = 1
 
-        # Collect active environments
         active = [i for i in range(num_envs) if not done_list[i]]
         if not active:
             continue
 
-        # Batch observations and masks
-        batch_obs = np.stack([obs_list[i] for i in active])
-        batch_mask = np.stack([mask_list[i] for i in active])
-        batch_tensor_obs = torch.as_tensor(batch_obs, dtype=torch.float32, device=device)
-        batch_tensor_mask = torch.as_tensor(batch_mask, dtype=torch.bool, device=device)
+        model_active = [i for i in active if not use_opp[i] or info_list[i]["current_player"] == model_player[i]]
+        opp_active = [i for i in active if use_opp[i] and info_list[i]["current_player"] != model_player[i]]
 
-        with torch.no_grad():
-            actions_t, log_probs_t, values_t = model.act(
-                batch_tensor_obs, batch_tensor_mask, deterministic=False
-            )
-        action_list = actions_t.cpu().tolist()
-        logp_list = log_probs_t.cpu().tolist()
-        val_list = values_t.cpu().tolist()
+        model_actions_map: dict[int, tuple] = {}
+        if model_active:
+            batch_obs = np.stack([obs_list[i] for i in model_active])
+            batch_mask = np.stack([mask_list[i] for i in model_active])
+            bt_obs = torch.as_tensor(batch_obs, dtype=torch.float32, device=device)
+            bt_mask = torch.as_tensor(batch_mask, dtype=torch.bool, device=device)
+            with torch.no_grad():
+                acts_t, logps_t, vals_t = model.act(bt_obs, bt_mask, deterministic=False)
+            for j, i in enumerate(model_active):
+                if cfg.explore_eps > 0 and rng.random() < cfg.explore_eps:
+                    legal = np.flatnonzero(mask_list[i])
+                    a = int(rng.choice(legal))
+                else:
+                    a = int(acts_t[j].item())
+                model_actions_map[i] = (a, float(logps_t[j].item()), float(vals_t[j].item()))
 
-        futures = {
-            pool.submit(envs[i].step, int(action_list[j]), cfg.n_in_row): (j, i)
-            for j, i in enumerate(active)
-        }
+        opp_actions_map: dict[int, int] = {}
+        for i in opp_active:
+            bt_obs = torch.as_tensor(obs_list[i], dtype=torch.float32, device=device).unsqueeze(0)
+            bt_mask = torch.as_tensor(mask_list[i], dtype=torch.bool, device=device).unsqueeze(0)
+            with torch.no_grad():
+                a = int(opponent.act(bt_obs, bt_mask, deterministic=True)[0].item())
+            opp_actions_map[i] = a
+
+        futures = {}
+        for i in active:
+            act = model_actions_map[i][0] if i in model_actions_map else opp_actions_map[i]
+            futures[pool.submit(envs[i].step, act, cfg.n_in_row)] = i
         step_results: dict[int, tuple] = {}
         for future in futures:
-            j, i = futures[future]
+            i = futures[future]
             step_results[i] = future.result()
 
-        for j, i in enumerate(active):
+        for i in active:
+            if i not in step_results:
+                continue
             next_obs, next_mask, reward, terminated, _next_player = step_results[i]
-            action = int(action_list[j])
-            current_player = int(info_list[i]["current_player"])
             bonus = compute_threat_bonus(
-                envs[i].board, action, current_player, cfg.n_in_row, cfg.threat_bonus_scale
+                envs[i].board, model_actions_map[i][0] if i in model_actions_map else opp_actions_map[i],
+                info_list[i]["current_player"], cfg.n_in_row, cfg.threat_bonus_scale
             )
 
-            obs_rows.append(obs_list[i])
-            mask_rows.append(mask_list[i])
-            actions.append(action)
-            old_log_probs.append(float(log_probs_t[j].item()))
-            old_values.append(float(values_t[j].item()))
-            ep_rewards[i].append(float(reward) + bonus)
-            ep_values[i].append(float(values_t[j].item()))
+            is_model = i in model_actions_map
+            if is_model:
+                _a, logp, val = model_actions_map[i]
+                obs_rows.append(obs_list[i])
+                mask_rows.append(mask_list[i])
+                actions.append(_a)
+                old_log_probs.append(logp)
+                old_values.append(val)
+                ep_rewards[i].append(float(reward) + bonus)
+                ep_values[i].append(val)
 
             obs_list[i] = next_obs
             mask_list[i] = next_mask
             info_list[i] = {"current_player": _next_player}
             done_list[i] = terminated
 
-            if done_list[i]:
-                if ep_rewards[i]:
-                    ep_adv, ep_ret = compute_gae(
-                        ep_rewards[i], ep_values[i], cfg.gamma, cfg.gae_lambda
-                    )
-                    advantages.extend(ep_adv)
-                    returns.extend(ep_ret)
+            if done_list[i] and ep_rewards[i]:
+                ep_adv, ep_ret = compute_gae(ep_rewards[i], ep_values[i], cfg.gamma, cfg.gae_lambda)
+                advantages.extend(ep_adv)
+                returns.extend(ep_ret)
                 ep_rewards[i] = []
                 ep_values[i] = []
                 total_games += 1

@@ -40,6 +40,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--eval-checkpoints", type=parse_checkpoint_specs)
     parser.add_argument("--resume", default="")
     parser.add_argument("--pretrained", default="")
+    parser.add_argument("--pretrained-opponent", default="")
+    parser.add_argument("--explore-eps", type=float)
     parser.add_argument("--freeze-body", action="store_true", default=None)
     parser.add_argument("--description")
     return parser

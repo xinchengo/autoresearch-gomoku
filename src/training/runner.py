@@ -62,7 +62,19 @@ def train(args) -> None:
         state = TrainState(**saved_checkpoint.get("state", {}))
         restore_rng_state(saved_checkpoint.get("rng_state"))
 
-    _run_training_loop(model, optimizer, cfg, state, run_path, metrics_path, results_path, device, args.resume)
+    opponent_model = None
+    if cfg.pretrained_opponent:
+        opp_ckpt = load_torch_checkpoint(cfg.pretrained_opponent, device)
+        opp_cfg = opp_ckpt.get("config", {})
+        opponent_model = ActorCriticNet(
+            board_size=int(opp_cfg.get("board_size", cfg.board_size)),
+            channels=int(opp_cfg.get("channels", cfg.channels)),
+            blocks=int(opp_cfg.get("blocks", cfg.blocks)),
+        ).to(device)
+        opponent_model.load_state_dict(opp_ckpt["model"])
+        opponent_model.eval()
+
+    _run_training_loop(model, optimizer, cfg, state, run_path, metrics_path, results_path, device, args.resume, opponent_model)
 
 
 def _run_training_loop(
@@ -75,6 +87,7 @@ def _run_training_loop(
     results_path: Path,
     device: torch.device,
     resume_path: str,
+    opponent_model: ActorCriticNet | None = None,
 ) -> None:
     start_time = time.time()
     end_time = start_time + cfg.duration_seconds
@@ -97,7 +110,7 @@ def _run_training_loop(
     try:
         while time.time() < end_time:
             if cfg.vectorized_collect:
-                batch = collect_vectorized_play(model, cfg, device)
+                batch = collect_vectorized_play(model, cfg, device, opponent=opponent_model)
             elif cfg.grad_accum_steps > 1:
                 batches = [collect_self_play(model, cfg, device) for _ in range(cfg.grad_accum_steps)]
                 batch = {
